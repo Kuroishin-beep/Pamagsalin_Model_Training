@@ -219,11 +219,11 @@ if __name__ == '__main__':
         pad_token_id=processor.tokenizer.pad_token_id,
         vocab_size=len(processor.tokenizer)
     )
-    # Freeze the feature extraction layers, as they are already well-trained
+    # Freezes the feature extraction layers, as they are already well-trained
     model.freeze_feature_encoder()
 
     # Define training arguments
-    # Adjust these based on your GPU capacity
+    # Adjust mo  based on your GPU capacity
     training_args = TrainingArguments(
         output_dir=MODEL_OUTPUT_DIR,
         group_by_length=True,

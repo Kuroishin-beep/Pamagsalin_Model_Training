@@ -1,255 +1,127 @@
-import os
-import re
-import json
 import torch
-import torchaudio
-import evaluate
-import pandas as pd
-from datasets import Dataset, Audio
+import librosa
 from transformers import (
-    Wav2Vec2CTCTokenizer,
-    Wav2Vec2FeatureExtractor,
+    Wav2Vec2ForCTC,
     Wav2Vec2Processor,
-    Wav2Vec2ForCTC
+    pipeline
 )
-from transformers.training_args import TrainingArguments
-from transformers.trainer import Trainer
 
 # --- Configuration ---
-# IMPORTANT: Update these paths
-VALIDATED_DATA_FOLDER = 'data/validated_audio' # The folder created by the validation script
-MODEL_OUTPUT_DIR = './kapampangan_wav2vec2_model' # Directory to save the trained model
-BASE_MODEL = "facebook/wav2vec2-large-xlsr-53" 
+# Path to your fine-tuned Wav2Vec2 model directory
+ASR_MODEL_PATH = './kapampangan_wav2vec2_model'
 
-# --- 1. Load the Dataset ---
-def load_custom_dataset(data_folder):
-    """Loads the dataset from the metadata.csv file."""
-    metadata_path = os.path.join(data_folder, "metadata.csv")
-    if not os.path.exists(metadata_path):
-        raise FileNotFoundError(
-            f"metadata.csv not found in {data_folder}. "
-            "Please ensure you have run the validation script first."
-        )
-    dataset_df = pd.read_csv(metadata_path)
-    # Convert DataFrame to Hugging Face Dataset object
-    custom_dataset = Dataset.from_pandas(dataset_df)
-    return custom_dataset
+# Name of the translation model from Hugging Face Hub.
+# NOTE: There isn't a dedicated public Kapampangan-English model.
+# We will use a Tagalog-English model as the closest available relative.
+# For better results, you would need to train your own translation model.
+TRANSLATION_MODEL = "Helsinki-NLP/opus-mt-tl-en"
 
-# --- 2. Create Vocabulary ---
-def create_vocabulary(data):
+# Path to an audio file you want to translate
+# Make sure this is a .wav file from your dataset or a new recording.
+AUDIO_FILE_TO_TRANSLATE = 'path/to/your/test_audio.wav' 
+
+# --- 1. Load the Models and Processors ---
+
+def load_models():
     """
-    Extracts all unique characters from the transcription column
-    and creates a vocabulary file.
+    Loads the fine-tuned ASR model and the translation pipeline.
     """
-    # Regex to extract characters, handling potential variations
-    chars_to_ignore_regex = '[\,\?\.\!\-\;\:\"\“\%\‘\”\�]'
-
-    def extract_all_chars(batch):
-        all_text = " ".join(batch["transcription"])
-        # Normalize and remove special characters
-        all_text = re.sub(chars_to_ignore_regex, '', all_text).lower()
-        # Create a set of unique characters
-        vocab = list(set(all_text))
-        return {"vocab": [vocab], "all_text": [all_text]}
-
-    # Extract vocabulary from the dataset
-    vocab_result = data.map(
-        extract_all_chars,
-        batched=True,
-        batch_size=-1,
-        keep_in_memory=True,
-        remove_columns=data.column_names
-    )
-
-    # Combine all unique characters from all batches
-    vocab_list = list(set(vocab_result["vocab"][0]))
-    vocab_dict = {v: k for k, v in enumerate(vocab_list)}
-
-    # Add a padding token, which is crucial for CTC loss
-    vocab_dict["|"] = vocab_dict.pop(" ")
-    vocab_dict["[UNK]"] = len(vocab_dict)
-    vocab_dict["[PAD]"] = len(vocab_dict)
-    
-    # Save the vocabulary as a json file
-    vocab_path = os.path.join(MODEL_OUTPUT_DIR, 'vocab.json')
-    if not os.path.exists(MODEL_OUTPUT_DIR):
-        os.makedirs(MODEL_OUTPUT_DIR)
-    with open(vocab_path, 'w') as vocab_file:
-        json.dump(vocab_dict, vocab_file)
-    
-    print(f"Vocabulary created and saved to {vocab_path}")
-    return vocab_path
-
-# --- 3. Preprocess the Data ---
-def preprocess_data(dataset, processor):
-    """
-    Prepares the dataset for training:
-    1. Loads and resamples audio.
-    2. Tokenizes transcriptions.
-    """
-    # Cast the audio column to the Audio feature type
-    dataset = dataset.cast_column("file_path", Audio(sampling_rate=16000))
-
-    def prepare_dataset(batch):
-        audio = batch["file_path"]
-        # Process audio to get the input_values
-        batch["input_values"] = processor(audio["array"], sampling_rate=audio["sampling_rate"]).input_values[0]
-        batch["input_length"] = len(batch["input_values"])
+    print("--- Loading models, this might take a moment... ---")
+    try:
+        # Load your custom-trained Automatic Speech Recognition (ASR) model
+        asr_model = Wav2Vec2ForCTC.from_pretrained(ASR_MODEL_PATH)
+        asr_processor = Wav2Vec2Processor.from_pretrained(ASR_MODEL_PATH)
         
-        # Process text to get the labels
-        with processor.as_target_processor():
-            batch["labels"] = processor(batch["transcription"]).input_ids
-        return batch
+        # Load the translation model pipeline
+        # This will download the model from the Hub on the first run.
+        translator = pipeline("translation", model=TRANSLATION_MODEL)
 
-    dataset = dataset.map(prepare_dataset, remove_columns=dataset.column_names)
-    print("Dataset successfully preprocessed.")
-    return dataset
+        print("--- Models loaded successfully! ---")
+        return asr_model, asr_processor, translator
 
-# --- 4. Define Metrics and Data Collator ---
-class DataCollatorCTCWithPadding:
+    except OSError:
+        print(f"ERROR: Could not find the ASR model at '{ASR_MODEL_PATH}'.")
+        print("Please ensure the path is correct and you have run the training script.")
+        return None, None, None
+    except Exception as e:
+        print(f"An error occurred while loading models: {e}")
+        return None, None, None
+
+
+# --- 2. Define the Translation Function ---
+
+def translate_kapampangan_audio_to_english(audio_path, asr_model, asr_processor, translator):
     """
-    Data collator that dynamically pads the inputs and labels for CTC.
-    """
-    def __init__(self, processor):
-        self.processor = processor
-        self.padding = "longest"
-
-    def __call__(self, features):
-        input_features = [{"input_values": feature["input_values"]} for feature in features]
-        label_features = [{"input_ids": feature["labels"]} for feature in features]
-
-        batch = self.processor.pad(
-            input_features,
-            padding=self.padding,
-            return_tensors="pt",
-        )
-
-        with self.processor.as_target_processor():
-            labels_batch = self.processor.pad(
-                label_features,
-                padding=self.padding,
-                return_tensors="pt",
-            )
-
-        # Replace padding with -100 to ignore loss correctly
-        labels = labels_batch["input_ids"].masked_fill(labels_batch.attention_mask.ne(1), -100)
-        batch["labels"] = labels
-        return batch
-
-def compute_metrics(pred):
-    """Computes Word Error Rate (WER) for evaluation."""
-    pred_logits = pred.predictions
-    pred_ids = torch.argmax(torch.from_numpy(pred_logits), dim=-1)
-
-    pred.label_ids[pred.label_ids == -100] = processor.tokenizer.pad_token_id
-
-    pred_str = processor.batch_decode(pred_ids)
-    label_str = processor.batch_decode(pred.label_ids, group_tokens=False)
-
-    wer = wer_metric.compute(predictions=pred_str, references=label_str)
-    return {"wer": wer}
-
-# --- Main Training Execution ---
-if __name__ == '__main__':
-    # Step 1: Load data
-    print("--- Step 1: Loading Dataset ---")
-    raw_dataset = load_custom_dataset(VALIDATED_DATA_FOLDER)
+    Takes the path to a WAV audio file and returns the English translation.
     
-    # For demonstration, we'll split into a small train/test set.
-    # In a real scenario, you'd want a larger, more robust split.
-    if len(raw_dataset) > 10:
-        dataset_split = raw_dataset.train_test_split(test_size=0.1)
-        train_dataset = dataset_split['train']
-        eval_dataset = dataset_split['test']
-        print(f"Dataset split into {len(train_dataset)} training samples and {len(eval_dataset)} evaluation samples.")
+    Args:
+        audio_path (str): The file path to the 16kHz mono WAV file.
+        asr_model: The loaded Wav2Vec2 CTC model.
+        asr_processor: The loaded Wav2Vec2 processor.
+        translator: The loaded translation pipeline.
+    """
+    if not audio_path or not os.path.exists(audio_path):
+        print(f"ERROR: Audio file not found at '{audio_path}'")
+        return
+
+    print(f"\n--- Processing: {os.path.basename(audio_path)} ---")
+
+    # 1. Load and preprocess the audio file
+    try:
+        speech_array, sampling_rate = librosa.load(audio_path, sr=16000)
+    except Exception as e:
+        print(f"ERROR: Could not read audio file. Make sure it's a valid .wav file. Details: {e}")
+        return
+
+    # 2. Transcribe Kapampangan speech to text
+    print("Step 1: Transcribing Kapampangan audio...")
+    input_values = asr_processor(speech_array, return_tensors="pt", sampling_rate=sampling_rate).input_values
+    
+    # Get model logits and find the most likely token ids
+    with torch.no_grad():
+        logits = asr_model(input_values).logits
+    predicted_ids = torch.argmax(logits, dim=-1)
+    
+    # Decode the token ids to a string
+    kapampangan_transcription = asr_processor.batch_decode(predicted_ids)[0]
+    print(f"  > Kapampangan Transcription: '{kapampangan_transcription}'")
+
+    # 3. Translate Kapampangan text to English
+    print("\nStep 2: Translating text to English...")
+    if not kapampangan_transcription.strip():
+        print("  > Warning: Transcription is empty. Cannot translate.")
+        english_translation_text = "[No text to translate]"
     else:
-        train_dataset = raw_dataset
-        eval_dataset = raw_dataset # Evaluate on the training set if too small
-        print("Warning: Dataset is very small. Evaluating on the training set.")
+        # The translator expects a list of sentences
+        translation_output = translator(kapampangan_transcription)
+        english_translation_text = translation_output[0]['translation_text']
+
+    print(f"  > English Translation: '{english_translation_text}'")
+    print("--- Translation Complete ---")
+
+    return kapampangan_transcription, english_translation_text
 
 
-    # Step 2: Create vocabulary
-    print("\n--- Step 2: Creating Vocabulary ---")
-    vocab_path = create_vocabulary(train_dataset)
+# --- Main Execution ---
+if __name__ == '__main__':
+    import os
 
-    # Step 3: Setup Processor (Tokenizer + Feature Extractor)
-    print("\n--- Step 3: Setting up Processor ---")
-    tokenizer = Wav2Vec2CTCTokenizer.from_pretrained(
-        "./", # Use local directory
-        unk_token="[UNK]",
-        pad_token="[PAD]",
-        word_delimiter_token="|",
-        vocab_file=vocab_path
-    )
-    feature_extractor = Wav2Vec2FeatureExtractor(
-        feature_size=1,
-        sampling_rate=16000,
-        padding_value=0.0,
-        do_normalize=True,
-        return_attention_mask=False
-    )
-    processor = Wav2Vec2Processor(feature_extractor=feature_extractor, tokenizer=tokenizer)
-    
-    # Save processor for later use
-    processor.save_pretrained(MODEL_OUTPUT_DIR)
-    print("Processor created and saved.")
+    # Load the models once
+    asr_model, asr_processor, translator = load_models()
 
-    # Step 4: Preprocess the dataset
-    print("\n--- Step 4: Preprocessing Data ---")
-    processed_train_dataset = preprocess_data(train_dataset, processor)
-    processed_eval_dataset = preprocess_data(eval_dataset, processor)
-    
-    # Step 5: Setup Trainer
-    print("\n--- Step 5: Setting up Model and Trainer ---")
-    data_collator = DataCollatorCTCWithPadding(processor=processor)
-    wer_metric = evaluate.load("wer")
-
-    model = Wav2Vec2ForCTC.from_pretrained(
-        BASE_MODEL,
-        ctc_loss_reduction="mean",
-        pad_token_id=processor.tokenizer.pad_token_id,
-        vocab_size=len(processor.tokenizer)
-    )
-    # Freeze the feature extraction layers, as they are already well-trained
-    model.freeze_feature_encoder()
-
-    # Define training arguments
-    # Adjust these based on your GPU capacity
-    training_args = TrainingArguments(
-        output_dir=MODEL_OUTPUT_DIR,
-        group_by_length=True,
-        per_device_train_batch_size=4, # Lower if you get memory errors
-        per_device_eval_batch_size=4,
-        evaluation_strategy="steps",
-        num_train_epochs=15, # Increase for better results on a larger dataset
-        fp16=True, # Use mixed precision for faster training if you have a compatible GPU
-        gradient_checkpointing=True,
-        save_steps=500,
-        eval_steps=500,
-        logging_steps=50,
-        learning_rate=3e-4,
-        warmup_steps=500,
-        save_total_limit=2,
-        push_to_hub=False,
-    )
-
-    trainer = Trainer(
-        model=model,
-        data_collator=data_collator,
-        args=training_args,
-        compute_metrics=compute_metrics,
-        train_dataset=processed_train_dataset,
-        eval_dataset=processed_eval_dataset,
-        tokenizer=processor.feature_extractor,
-    )
-
-    # Step 6: Train the model
-    print("\n--- Step 6: Starting Training ---")
-    print("This may take a significant amount of time depending on your hardware and dataset size.")
-    trainer.train()
-
-    # Step 7: Save the final model
-    print("\n--- Step 7: Saving Final Model ---")
-    trainer.save_model(MODEL_OUTPUT_DIR)
-    print(f"Training complete! Your fine-tuned model is saved in: {MODEL_OUTPUT_DIR}")
+    if all([asr_model, asr_processor, translator]):
+        # Check if the example audio file path is valid
+        if AUDIO_FILE_TO_TRANSLATE == 'path/to/your/test_audio.wav' or not os.path.exists(AUDIO_FILE_TO_TRANSLATE):
+            print("\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            print("!!! PLEASE UPDATE 'AUDIO_FILE_TO_TRANSLATE' IN THE SCRIPT !!!")
+            print("!!! Point it to a real .wav file to test the translator.    !!!")
+            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        else:
+            # Run the full translation process on the specified audio file
+            translate_kapampangan_audio_to_english(
+                AUDIO_FILE_TO_TRANSLATE,
+                asr_model,
+                asr_processor,
+                translator
+            )
 

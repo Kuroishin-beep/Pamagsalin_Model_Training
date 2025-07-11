@@ -22,9 +22,13 @@ print("Preprocessing dataset...")
 def prepare_batch(batch):
     try:
         audio = batch["audio"]["array"]
+        # Process audio with processor
         inputs = processor(audio, sampling_rate=16000, return_tensors="pt", padding=True)
+        
+        # Process transcription
         with processor.as_target_processor():
             labels = processor(batch["transcription"]).input_ids
+        
         batch["input_values"] = inputs.input_values[0]
         batch["labels"] = torch.tensor(labels)
         return batch
@@ -32,7 +36,9 @@ def prepare_batch(batch):
         print(f"Error processing batch: {e}")
         return None
 
+# Filter out None values from processing
 processed_dataset = dataset.map(prepare_batch, remove_columns=dataset.column_names)
+processed_dataset = processed_dataset.filter(lambda x: x is not None)
 
 print("Setting up training arguments...")
 #Step 4 training Arguments

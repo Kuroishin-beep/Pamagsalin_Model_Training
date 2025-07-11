@@ -10,16 +10,16 @@ from transformers import (
     Wav2Vec2CTCTokenizer,
     Wav2Vec2FeatureExtractor,
     Wav2Vec2Processor,
-    Wav2Vec2ForCTC,
-    TrainingArguments,
-    Trainer
+    Wav2Vec2ForCTC
 )
+from transformers.training_args import TrainingArguments
+from transformers.trainer import Trainer
 
 # --- Configuration ---
 # IMPORTANT: Update these paths
-VALIDATED_DATA_FOLDER = 'path/to/your/validated_kapampangan_audio' # The folder created by the validation script
+VALIDATED_DATA_FOLDER = 'data/validated_audio' # The folder created by the validation script
 MODEL_OUTPUT_DIR = './kapampangan_wav2vec2_model' # Directory to save the trained model
-BASE_MODEL = "facebook/wav2vec2-large-xlsr-53" # A strong multilingual base model
+BASE_MODEL = "facebook/wav2vec2-large-xlsr-53" 
 
 # --- 1. Load the Dataset ---
 def load_custom_dataset(data_folder):

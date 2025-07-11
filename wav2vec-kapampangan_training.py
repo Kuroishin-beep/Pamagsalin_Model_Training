@@ -164,17 +164,24 @@ if __name__ == '__main__':
     print("--- Step 1: Loading Dataset ---")
     raw_dataset = load_custom_dataset(VALIDATED_DATA_FOLDER)
     
-    # For demonstration, we'll split into a small train/test set.
-    # In a real scenario, you'd want a larger, more robust split.
-    if len(raw_dataset) > 10:
-        dataset_split = raw_dataset.train_test_split(test_size=0.1)
+    # --- Realistic train/test split for a real scenario ---
+    from datasets import DatasetDict
+    RANDOM_SEED = 42
+    SPLIT_RATIO = 0.1  # 10% for evaluation
+
+    if len(raw_dataset) > 1:
+        dataset_split = raw_dataset.train_test_split(
+            test_size=SPLIT_RATIO,
+            shuffle=True,
+            seed=RANDOM_SEED
+        )
         train_dataset = dataset_split['train']
         eval_dataset = dataset_split['test']
         print(f"Dataset split into {len(train_dataset)} training samples and {len(eval_dataset)} evaluation samples.")
     else:
         train_dataset = raw_dataset
-        eval_dataset = raw_dataset # Evaluate on the training set if too small
-        print("Warning: Dataset is very small. Evaluating on the training set.")
+        eval_dataset = raw_dataset
+        print("Warning: Dataset is too small for a split. Evaluating on the training set.")
 
 
     # Step 2: Create vocabulary
@@ -219,7 +226,7 @@ if __name__ == '__main__':
         pad_token_id=processor.tokenizer.pad_token_id,
         vocab_size=len(processor.tokenizer)
     )
-    # Freezes the feature extraction layers, as they are already well-trained
+    # Freeze the feature extraction layers, as they are already well-trained
     model.freeze_feature_encoder()
 
     # Define training arguments

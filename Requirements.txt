@@ -1,0 +1,9 @@
+torch
+torchaudio
+transformers
+datasets
+librosa
+soundfile
+accelerate
+evaluate
+jiwer

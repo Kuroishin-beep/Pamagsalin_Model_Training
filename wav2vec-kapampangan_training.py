@@ -15,6 +15,11 @@ from transformers import (
 from transformers.training_args import TrainingArguments
 from transformers.trainer import Trainer
 
+# Check for CUDA availability and print device
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print("Using device:", torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU")
+
+
 # --- Configuration ---
 # IMPORTANT: Update these paths
 VALIDATED_DATA_FOLDER = 'data/validated_audio' # The folder created by the validation script
@@ -90,6 +95,8 @@ def preprocess_data(dataset, processor):
     import librosa
     import soundfile as sf
 
+    total_before = len(dataset)
+    
     def prepare_dataset(batch):
         try:
             # Load audio file directly using librosa
@@ -111,7 +118,8 @@ def preprocess_data(dataset, processor):
     dataset = dataset.map(prepare_dataset, remove_columns=dataset.column_names)
     # Filter out None values from processing errors
     dataset = dataset.filter(lambda x: x is not None)
-    print("Dataset successfully preprocessed.")
+    total_after = len(dataset)
+    print(f"Preprocessing complete: {total_after} / {total_before} samples successfully processed.")
     return dataset
 
 # --- 4. Define Metrics and Data Collator ---
@@ -164,7 +172,6 @@ if __name__ == '__main__':
     print("--- Step 1: Loading Dataset ---")
     raw_dataset = load_custom_dataset(VALIDATED_DATA_FOLDER)
     
-    # --- Realistic train/test split for a real scenario ---
     from datasets import DatasetDict
     RANDOM_SEED = 42
     SPLIT_RATIO = 0.1  # 10% for evaluation
@@ -255,7 +262,7 @@ if __name__ == '__main__':
         compute_metrics=compute_metrics,
         train_dataset=processed_train_dataset,
         eval_dataset=processed_eval_dataset,
-        tokenizer=processor.feature_extractor,
+        processor=processor,
     )
 
     # Step 6: Train the model

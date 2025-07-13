@@ -253,6 +253,8 @@ if __name__ == '__main__':
         warmup_steps=500,
         save_total_limit=2,
         push_to_hub=False,
+        
+        remove_unused_columns=False,
     )
 
     trainer = Trainer(
@@ -262,7 +264,7 @@ if __name__ == '__main__':
         compute_metrics=compute_metrics,
         train_dataset=processed_train_dataset,
         eval_dataset=processed_eval_dataset,
-        tokenizer=processor.feature_extractor,
+        processor=processor,
     )
 
     # Step 6: Train the model

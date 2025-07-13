@@ -97,30 +97,44 @@ def preprocess_data(dataset, processor):
 
     total_before = len(dataset)
     
+    # Inside the preprocess_data function
     def prepare_dataset(batch):
         try:
-            # Load audio file directly using librosa
+            # ... (your existing code)
             audio_path = batch["file_path"]
             audio_array, sr = librosa.load(audio_path, sr=16000)
-            
-            # Process audio to get the input_values
+
             batch["input_values"] = processor(audio_array, sampling_rate=16000).input_values[0]
             batch["input_length"] = len(batch["input_values"])
-            
-            # Process text to get the labels
+
             with processor.as_target_processor():
                 batch["labels"] = processor(batch["transcription"]).input_ids
             return batch
+
         except Exception as e:
-            print(f"Error processing {batch['file_path']}: {e}")
+            print(f"Failed to Process")
+            print(f"File: {batch.get('file_path', 'Path not found')}")
+            print(f"Error: {e}")
+            print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             return None
 
-    dataset = dataset.map(prepare_dataset, remove_columns=dataset.column_names)
-    # Filter out None values from processing errors
-    dataset = dataset.filter(lambda x: x is not None)
+    # Process each example individually
+    processed_examples = []
+    for i in range(len(dataset)):
+        example = dataset[i]
+        processed_example = prepare_dataset(example)
+        if processed_example is not None:
+            processed_examples.append(processed_example)
+    
+    # Create a new dataset from processed examples
+    from datasets import Dataset
+    dataset = Dataset.from_list(processed_examples)
     total_after = len(dataset)
     print(f"Preprocessing complete: {total_after} / {total_before} samples successfully processed.")
     return dataset
+
+# Global variable for processor to be used in compute_metrics
+processor = None
 
 # --- 4. Define Metrics and Data Collator ---
 class DataCollatorCTCWithPadding:
@@ -160,8 +174,8 @@ def compute_metrics(pred):
 
     pred.label_ids[pred.label_ids == -100] = processor.tokenizer.pad_token_id
 
-    pred_str = processor.batch_decode(pred_ids)
-    label_str = processor.batch_decode(pred.label_ids, group_tokens=False)
+    pred_str = processor.tokenizer.batch_decode(pred_ids)
+    label_str = processor.tokenizer.batch_decode(pred.label_ids, group_tokens=False)
 
     wer = wer_metric.compute(predictions=pred_str, references=label_str)
     return {"wer": wer}
@@ -213,6 +227,9 @@ if __name__ == '__main__':
     )
     processor = Wav2Vec2Processor(feature_extractor=feature_extractor, tokenizer=tokenizer)
     
+    # Set global processor for compute_metrics
+    globals()['processor'] = processor
+    
     # Save processor for later use
     processor.save_pretrained(MODEL_OUTPUT_DIR)
     print("Processor created and saved.")
@@ -241,10 +258,11 @@ if __name__ == '__main__':
     training_args = TrainingArguments(
         output_dir=MODEL_OUTPUT_DIR,
         group_by_length=True,
+        length_column_name="input_length",
         per_device_train_batch_size=4, # Lower if you get memory errors
         per_device_eval_batch_size=4,
         num_train_epochs=15, # Increase for better results on a larger dataset
-        fp16=True, # Use mixed precision for faster training if you have a compatible GPU
+        fp16=True,
         gradient_checkpointing=True,
         save_steps=500,
         eval_steps=500,
@@ -264,7 +282,6 @@ if __name__ == '__main__':
         compute_metrics=compute_metrics,
         train_dataset=processed_train_dataset,
         eval_dataset=processed_eval_dataset,
-        tokenizer=processor.feature_extractor,
     )
 
     # Step 6: Train the model

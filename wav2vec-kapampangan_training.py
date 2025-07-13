@@ -262,7 +262,7 @@ if __name__ == '__main__':
         compute_metrics=compute_metrics,
         train_dataset=processed_train_dataset,
         eval_dataset=processed_eval_dataset,
-        processor=processor,
+        tokenizer=processor.feature_extractor,
     )
 
     # Step 6: Train the model

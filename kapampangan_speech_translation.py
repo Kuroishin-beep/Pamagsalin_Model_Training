@@ -12,7 +12,7 @@ import evaluate
 
 # --- Config ---
 CSV_PATH = "data/kapampangan_english.csv"
-MODEL_NAME = "Helsinki-NLP/opus-mt-en-ROMANCE"  # Base Tagalog→English MarianMT
+MODEL_NAME = "Helsinki-NLP/opus-mt-tl-en"  # Base Tagalog→English MarianMT
 MODEL_DIR = "./kapampangan_mt_model"
 
 # --- Load and Clean CSV ---
@@ -51,10 +51,10 @@ tokenized_dataset = dataset.map(preprocess, batched=True)
 # --- Training Setup ---
 training_args = Seq2SeqTrainingArguments(
     output_dir=MODEL_DIR,
-    learning_rate=5e-6,
+    learning_rate=1e-4,
     per_device_train_batch_size=4,
     per_device_eval_batch_size=4,
-    num_train_epochs=30,
+    num_train_epochs=15,
     weight_decay=0.01,
     predict_with_generate=True,
     save_total_limit=2,
@@ -82,7 +82,10 @@ print(f"✅ Model saved to: {MODEL_DIR}")
 
 # --- Translation Function ---
 def kapampangan_translate(text):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
     inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=128)
+    inputs = {k: v.to(device) for k, v in inputs.items()}
     with torch.no_grad():
         outputs = model.generate(**inputs)
     return tokenizer.decode(outputs[0], skip_special_tokens=True)
@@ -102,7 +105,7 @@ print(" BLEU Score:", bleu_score)
 print("\n--- Manual Test ---")
 sample_texts = [
     "Ali ku balu",                         # I don't know
-    "Anya ka?",                            # How are you?
+    "Nanya ka?",                            # How are you?
     "Masanting ya ing panaun ngeni",        # The weather is nice today
     "E ku makanyan",                       # I'm not like that
 ]

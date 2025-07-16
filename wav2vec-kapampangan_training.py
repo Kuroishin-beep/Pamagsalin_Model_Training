@@ -258,7 +258,7 @@ if __name__ == '__main__':
         length_column_name="input_length",
         per_device_train_batch_size=2,  # Lower batch size for smaller dataset
         per_device_eval_batch_size=2,
-        num_train_epochs=30,  # More epochs for smaller dataset
+        num_train_epochs=15,  # More epochs for smaller dataset
         save_strategy="epoch",
         save_total_limit=3,
         fp16=torch.cuda.is_available(),

@@ -20,7 +20,7 @@ def validate_and_process_audio(
         target_sr (int): The target sample rate for the audio files.
     """
     print(f"Starting audio validation and processing...")
-    print(f"Source folder: {'D:/Github/Project/Pamagsalin_Model_Training/data/Audio Files'}")
+    print(f"Source folder: {'D:/Github/Project/Pamagsalin_Model_Training/data/validated_audio'}")
     print(f"Output folder: {'D:/Github/Project/Pamagsalin_Model_Training/data/Valdiate_Audio_Files'}")
     print(f"Metadata CSV: {'D:/Github/Project/Pamagsalin_Model_Training/data/kapampangan_english.csv'}")
 
@@ -113,7 +113,7 @@ if __name__ == '__main__':
     # --- Configuration ---
     # IMPORTANT: Update these paths to match your folder structure
     SOURCE_AUDIO_FOLDER = 'data/Audio Files'
-    VALIDATED_AUDIO_FOLDER = 'data/validated_audio'
+    VALIDATED_AUDIO_FOLDER = 'data/Validated_Audio_Files'
     METADATA_CSV_FILE = 'data/kapampangan_english.csv' # This should contain 'file_name' and 'transcription' columns
 
     # --- Run the script ---

@@ -19,12 +19,11 @@ from transformers.trainer import Trainer
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Using device:", torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU")
 
-
 # --- Configuration ---
-# IMPORTANT: Update these paths
-VALIDATED_DATA_FOLDER = 'data/validated_audio' # The folder created by the validation script
-MODEL_OUTPUT_DIR = './kapampangan_wav2vec2_model' # Directory to save the trained model
-BASE_MODEL = "facebook/wav2vec2-large-xlsr-53" 
+# IMPORTANT: Update these paths for Kapampangan training
+VALIDATED_DATA_FOLDER = 'data/kapampangan_audio'  # The folder with Kapampangan audio and transcriptions
+MODEL_OUTPUT_DIR = './kapampangan_wav2vec2_model'  # Directory to save the trained model
+BASE_MODEL = "facebook/wav2vec2-large-xlsr-53"  # Base model for fine-tuning
 
 # --- 1. Load the Dataset ---
 def load_custom_dataset(data_folder):
@@ -33,21 +32,21 @@ def load_custom_dataset(data_folder):
     if not os.path.exists(metadata_path):
         raise FileNotFoundError(
             f"metadata.csv not found in {data_folder}. "
-            "Please ensure you have run the validation script first."
+            "Please ensure you have run the prepare_kapampangan_dataset.py script first."
         )
     dataset_df = pd.read_csv(metadata_path)
     # Convert DataFrame to Hugging Face Dataset object
     custom_dataset = Dataset.from_pandas(dataset_df)
     return custom_dataset
 
-# --- 2. Create Vocabulary ---
+# --- 2. Create Vocabulary for Kapampangan ---
 def create_vocabulary(data):
     """
-    Extracts all unique characters from the transcription column
+    Extracts all unique characters from the Kapampangan transcription column
     and creates a vocabulary file.
     """
     # Regex to extract characters, handling potential variations
-    chars_to_ignore_regex = '[\,\?\.\!\-\;\:\"\“\%\‘\”\�]'
+    chars_to_ignore_regex = r"[\,\?\.\!\-\;\:\"'%\[\]]"
 
     def extract_all_chars(batch):
         all_text = " ".join(batch["transcription"])
@@ -70,8 +69,8 @@ def create_vocabulary(data):
     vocab_list = list(set(vocab_result["vocab"][0]))
     vocab_dict = {v: k for k, v in enumerate(vocab_list)}
 
-    # Add a padding token, which is crucial for CTC loss
-    vocab_dict["|"] = vocab_dict.pop(" ")
+    # Add special tokens for CTC loss
+    vocab_dict["|"] = vocab_dict.pop(" ") if " " in vocab_dict else len(vocab_dict)
     vocab_dict["[UNK]"] = len(vocab_dict)
     vocab_dict["[PAD]"] = len(vocab_dict)
     
@@ -83,6 +82,7 @@ def create_vocabulary(data):
         json.dump(vocab_dict, vocab_file)
     
     print(f"Vocabulary created and saved to {vocab_path}")
+    print(f"Vocabulary size: {len(vocab_dict)}")
     return vocab_path
 
 # --- 3. Preprocess the Data ---
@@ -90,19 +90,24 @@ def preprocess_data(dataset, processor):
     """
     Prepares the dataset for training:
     1. Loads and resamples audio.
-    2. Tokenizes transcriptions.
+    2. Tokenizes Kapampangan transcriptions.
     """
     import librosa
     import soundfile as sf
 
     total_before = len(dataset)
     
-    # Inside the preprocess_data function
     def prepare_dataset(batch):
         try:
-            # ... (your existing code)
             audio_path = batch["file_path"]
-            audio_array, sr = librosa.load(audio_path, sr=16000)
+            waveform, sr = torchaudio.load(audio_path)
+
+            if sr != 16000:
+                resampler = torchaudio.transforms.Resample(orig_freq=sr, new_freq=16000)
+                waveform = resampler(waveform)
+
+            # Convert waveform tensor to numpy array and flatten
+            audio_array = waveform.squeeze().numpy()
 
             batch["input_values"] = processor(audio_array, sampling_rate=16000).input_values[0]
             batch["input_length"] = len(batch["input_values"])
@@ -112,10 +117,10 @@ def preprocess_data(dataset, processor):
             return batch
 
         except Exception as e:
-            print(f"Failed to Process")
+            print("Failed to Process")
             print(f"File: {batch.get('file_path', 'Path not found')}")
-            print(f"Error: {e}")
-            print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            print(f"Error: {repr(e)}")  # This will give the actual exception message
+            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             return None
 
     # Process each example individually
@@ -132,9 +137,6 @@ def preprocess_data(dataset, processor):
     total_after = len(dataset)
     print(f"Preprocessing complete: {total_after} / {total_before} samples successfully processed.")
     return dataset
-
-# Global variable for processor to be used in compute_metrics
-processor = None
 
 # --- 4. Define Metrics and Data Collator ---
 class DataCollatorCTCWithPadding:
@@ -167,7 +169,7 @@ class DataCollatorCTCWithPadding:
         batch["labels"] = labels
         return batch
 
-def compute_metrics(pred):
+def compute_metrics(pred, processor, wer_metric):
     """Computes Word Error Rate (WER) for evaluation."""
     pred_logits = pred.predictions
     pred_ids = torch.argmax(torch.from_numpy(pred_logits), dim=-1)
@@ -183,12 +185,12 @@ def compute_metrics(pred):
 # --- Main Training Execution ---
 if __name__ == '__main__':
     # Step 1: Load data
-    print("--- Step 1: Loading Dataset ---")
+    print("--- Step 1: Loading Kapampangan Dataset ---")
     raw_dataset = load_custom_dataset(VALIDATED_DATA_FOLDER)
     
     from datasets import DatasetDict
     RANDOM_SEED = 42
-    SPLIT_RATIO = 0.1  # 10% for evaluation
+    SPLIT_RATIO = 0.2  # 20% for evaluation (more for small dataset)
 
     if len(raw_dataset) > 1:
         dataset_split = raw_dataset.train_test_split(
@@ -204,19 +206,17 @@ if __name__ == '__main__':
         eval_dataset = raw_dataset
         print("Warning: Dataset is too small for a split. Evaluating on the training set.")
 
-
     # Step 2: Create vocabulary
-    print("\n--- Step 2: Creating Vocabulary ---")
+    print("\n--- Step 2: Creating Kapampangan Vocabulary ---")
     vocab_path = create_vocabulary(train_dataset)
 
     # Step 3: Setup Processor (Tokenizer + Feature Extractor)
     print("\n--- Step 3: Setting up Processor ---")
-    tokenizer = Wav2Vec2CTCTokenizer.from_pretrained(
-        "./", # Use local directory
-        unk_token="[UNK]",
-        pad_token="[PAD]",
-        word_delimiter_token="|",
-        vocab_file=vocab_path
+    tokenizer = Wav2Vec2CTCTokenizer(
+    vocab_file=vocab_path,
+    unk_token="[UNK]",
+    pad_token="[PAD]",
+    word_delimiter_token="|"
     )
     feature_extractor = Wav2Vec2FeatureExtractor(
         feature_size=1,
@@ -226,9 +226,6 @@ if __name__ == '__main__':
         return_attention_mask=False
     )
     processor = Wav2Vec2Processor(feature_extractor=feature_extractor, tokenizer=tokenizer)
-    
-    # Set global processor for compute_metrics
-    globals()['processor'] = processor
     
     # Save processor for later use
     processor.save_pretrained(MODEL_OUTPUT_DIR)
@@ -247,50 +244,80 @@ if __name__ == '__main__':
     model = Wav2Vec2ForCTC.from_pretrained(
         BASE_MODEL,
         ctc_loss_reduction="mean",
-        pad_token_id=processor.tokenizer.pad_token_id,
-        vocab_size=len(processor.tokenizer)
+        pad_token_id=tokenizer.pad_token_id,
+        vocab_size=len(tokenizer)
     )
     # Freeze the feature extraction layers, as they are already well-trained
     model.freeze_feature_encoder()
 
-    # Define training arguments
-    # Adjust mo  based on your GPU capacity
+    # Define training arguments optimized for Kapampangan
     training_args = TrainingArguments(
         output_dir=MODEL_OUTPUT_DIR,
+        gradient_accumulation_steps=4,
         group_by_length=True,
         length_column_name="input_length",
-        per_device_train_batch_size=4, # Lower if you get memory errors
-        per_device_eval_batch_size=4,
-        num_train_epochs=15, # Increase for better results on a larger dataset
-        fp16=True,
+        per_device_train_batch_size=2,  # Lower batch size for smaller dataset
+        per_device_eval_batch_size=2,
+        num_train_epochs=30,  # More epochs for smaller dataset
+        save_strategy="epoch",
+        save_total_limit=3,
+        fp16=torch.cuda.is_available(),
         gradient_checkpointing=True,
-        save_steps=500,
-        eval_steps=500,
-        logging_steps=50,
-        learning_rate=3e-4,
-        warmup_steps=500,
-        save_total_limit=2,
+        save_steps=100,  # Save more frequently
+        eval_steps=100,
+        logging_steps=25,
+        learning_rate=1e-4,  # Lower learning rate for fine-tuning
+        warmup_steps=200,
         push_to_hub=False,
-        
         remove_unused_columns=False,
     )
+
+    # Create compute_metrics function with processor and wer_metric
+    def compute_metrics_wrapper(pred):
+        return compute_metrics(pred, processor, wer_metric)
 
     trainer = Trainer(
         model=model,
         data_collator=data_collator,
         args=training_args,
-        compute_metrics=compute_metrics,
+        compute_metrics=compute_metrics_wrapper,
         train_dataset=processed_train_dataset,
         eval_dataset=processed_eval_dataset,
     )
 
     # Step 6: Train the model
-    print("\n--- Step 6: Starting Training ---")
+    print("\n--- Step 6: Starting Kapampangan Training ---")
     print("This may take a significant amount of time depending on your hardware and dataset size.")
     trainer.train()
 
     # Step 7: Save the final model
     print("\n--- Step 7: Saving Final Model ---")
     trainer.save_model(MODEL_OUTPUT_DIR)
-    print(f"Training complete! Your fine-tuned model is saved in: {MODEL_OUTPUT_DIR}")
+    print(f"Training complete! Your fine-tuned Kapampangan model is saved in: {MODEL_OUTPUT_DIR}") 
+    
+    # --- Step 8: Evaluate on Evaluation Set ---
+print("\n--- Step 8: Evaluating on Validation Set ---")
 
+# Reload best model (if necessary)
+# model = Wav2Vec2ForCTC.from_pretrained(MODEL_OUTPUT_DIR).to(device)
+
+# Run prediction
+predictions = trainer.predict(processed_eval_dataset)
+
+# Compute metrics using the trainer’s compute_metrics function
+metrics = compute_metrics_wrapper(predictions)
+print(f"Validation WER: {metrics['wer']:.4f}")
+
+
+from random import sample
+
+print("\n--- Sample Predictions ---")
+pred_ids = torch.argmax(torch.from_numpy(predictions.predictions), dim=-1)
+decoded_preds = processor.batch_decode(pred_ids)
+decoded_labels = processor.batch_decode(predictions.label_ids, group_tokens=False)
+
+for i in sample(range(len(decoded_preds)), 5):
+    print(f"[{i+1}]")
+    print(f"Kapampangan (Predicted) : {decoded_preds[i]}")
+    print(f"Kapampangan (Reference) : {decoded_labels[i]}")
+    print("-" * 40)

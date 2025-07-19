@@ -16,12 +16,18 @@ MT_MODEL_DIR = "./kapampangan_mt_model"               # Path to fine-tuned Maria
 
 # --- Load ASR Components ---
 asr_processor = Wav2Vec2Processor.from_pretrained(ASR_MODEL_DIR)
-asr_model = Wav2Vec2ForCTC.from_pretrained(ASR_MODEL_DIR).to("cuda" if torch.cuda.is_available() else "cpu")
+if isinstance(asr_processor, tuple):
+    asr_processor = asr_processor[0]
+# Ensure asr_processor is the correct type
+assert hasattr(asr_processor, '__call__'), "asr_processor is not callable"
+asr_model = Wav2Vec2ForCTC.from_pretrained(ASR_MODEL_DIR)
+asr_model = asr_model.to("cuda" if torch.cuda.is_available() else "cpu")
 asr_model.eval()
 
 # --- Load MarianMT Components ---
 mt_tokenizer = MarianTokenizer.from_pretrained(MT_MODEL_DIR)
-mt_model = MarianMTModel.from_pretrained(MT_MODEL_DIR).to("cuda" if torch.cuda.is_available() else "cpu")
+mt_model = MarianMTModel.from_pretrained(MT_MODEL_DIR)
+mt_model = mt_model.to("cuda" if torch.cuda.is_available() else "cpu")
 mt_model.eval()
 
 # --- Function: Audio -> Kapampangan Transcription ---
@@ -57,7 +63,12 @@ def speech_to_translation(audio_path):
     return english_translation
 
 
-print(asr_processor.tokenizer.get_vocab().keys())
+# Print vocabulary keys if available
+try:
+    vocab = asr_processor.get_vocab()
+    print("Vocabulary keys:", list(vocab.keys())[:10])  # Show first 10 keys
+except:
+    print("Could not access vocabulary")
 # --- Example Run ---
 # Replace with your actual .wav file path
 example_audio = "data/validated_audio/cat03_entry001_spk013.wav"

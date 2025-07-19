@@ -1,3 +1,6 @@
+# Kapampangan-to-English MarianMT Training Pipeline
+
+## 1. Configuration and Imports
 import pandas as pd
 from datasets import Dataset
 from transformers import (
@@ -10,25 +13,26 @@ from transformers.data.data_collator import DataCollatorForSeq2Seq
 import torch
 import evaluate
 
-# --- Config ---
 CSV_PATH = "data/kapampangan_english.csv"
-MODEL_NAME = "Helsinki-NLP/opus-mt-tl-en"  # Base Tagalog→English MarianMT
+
+MODEL_NAME = "Helsinki-NLP/opus-mt-en-ROMANCE"
+
 MODEL_DIR = "./kapampangan_mt_model"
 
-# --- Load and Clean CSV ---
+## 2. Load and Clean CSV
 df = pd.read_csv(CSV_PATH)
 df = df.rename(columns={"kapampangan": "src_text", "english": "tgt_text"})
-df = df.dropna(subset=["src_text", "tgt_text"])  # Remove rows with nulls
+df = df.dropna(subset=["src_text", "tgt_text"])
 
-# --- Hugging Face Dataset ---
+## 3. Convert to Hugging Face Dataset
 dataset = Dataset.from_pandas(df[["src_text", "tgt_text"]])
 dataset = dataset.train_test_split(test_size=0.2, seed=42)
 
-# --- Load Tokenizer and Base Model ---
+## 4. Load Tokenizer and Base Model
 tokenizer = MarianTokenizer.from_pretrained(MODEL_NAME)
 model = MarianMTModel.from_pretrained(MODEL_NAME)
 
-# --- Tokenization ---
+## 5. Tokenization Function
 def preprocess(example):
     model_inputs = tokenizer(
         example["src_text"],
@@ -48,7 +52,7 @@ def preprocess(example):
 
 tokenized_dataset = dataset.map(preprocess, batched=True)
 
-# --- Training Setup ---
+## 6. Define Training Arguments
 training_args = Seq2SeqTrainingArguments(
     output_dir=MODEL_DIR,
     learning_rate=1e-4,
@@ -58,11 +62,14 @@ training_args = Seq2SeqTrainingArguments(
     weight_decay=0.01,
     predict_with_generate=True,
     save_total_limit=2,
-    fp16=torch.cuda.is_available(),
     logging_dir="./logs",
+    evaluation_strategy="epoch",
+    logging_strategy="epoch",
+    save_strategy="epoch",
+    fp16=torch.cuda.is_available(),
 )
 
-# --- Trainer ---
+## 7. Trainer Setup
 data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model)
 trainer = Seq2SeqTrainer(
     model=model,
@@ -72,15 +79,15 @@ trainer = Seq2SeqTrainer(
     data_collator=data_collator,
 )
 
-# --- Train the Model ---
+## 8. Train the Model
 trainer.train()
 
-# --- Save Final Model ---
+## 9. Save Final Model
 trainer.save_model(MODEL_DIR)
 tokenizer.save_pretrained(MODEL_DIR)
 print(f"✅ Model saved to: {MODEL_DIR}")
 
-# --- Translation Function ---
+## 10. Define Translation Function
 def kapampangan_translate(text):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
@@ -90,7 +97,7 @@ def kapampangan_translate(text):
         outputs = model.generate(**inputs)
     return tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-# --- BLEU Evaluation ---
+## 11. Evaluate BLEU Score
 print("\n--- Evaluating BLEU Score ---")
 bleu = evaluate.load("bleu")
 
@@ -100,17 +107,17 @@ refs = [[x] for x in df["tgt_text"]]
 bleu_score = bleu.compute(predictions=preds, references=refs)
 print(" BLEU Score:", bleu_score)
 
-
-# --- Manual Translation Test ---
+## 12. Manual Translation Test
 print("\n--- Manual Test ---")
 sample_texts = [
-    "Ali ku balu",                         # I don't know
-    "Nanya ka?",                            # How are you?
-    "Masanting ya ing panaun ngeni",        # The weather is nice today
-    "E ku makanyan",                       # I'm not like that
+
+    "Ali ku balu",
+    "Anya ka?",
+    "Masanting ya ing panaun ngeni",
+    "E ku makanyan",
 ]
 
 for i, kap_text in enumerate(sample_texts):
     translated = kapampangan_translate(kap_text)
     print(f"[{i+1}] Kapampangan: {kap_text}")
-    print(f"    ➜ English: {translated}")
+    print(f"    \u27a4 English: {translated}")

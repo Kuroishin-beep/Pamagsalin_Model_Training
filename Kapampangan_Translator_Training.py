@@ -33,22 +33,33 @@ tokenizer = MarianTokenizer.from_pretrained(MODEL_NAME)
 model = MarianMTModel.from_pretrained(MODEL_NAME)
 
 ## 5. Tokenization Function
-def preprocess(example):
+def preprocess(examples):
+    # Tokenize source text (Kapampangan)
     model_inputs = tokenizer(
-        example["src_text"],
+        examples["src_text"],
         truncation=True,
         padding="max_length",
         max_length=128
     )
+
+    # Tokenize target text (English)
     with tokenizer.as_target_tokenizer():
         labels = tokenizer(
-            example["tgt_text"],
+            examples["tgt_text"],
             truncation=True,
             padding="max_length",
             max_length=128
         )
-    model_inputs["labels"] = labels["input_ids"]
+
+    # Replace pad token IDs in labels with -100 so loss ignores them
+    labels_input_ids = [
+        [(t if t != tokenizer.pad_token_id else -100) for t in label]
+        for label in labels["input_ids"]
+    ]
+    model_inputs["labels"] = labels_input_ids
+
     return model_inputs
+
 
 tokenized_dataset = dataset.map(preprocess, batched=True)
 

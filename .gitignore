@@ -6,7 +6,11 @@ kapampangan_wav2vec2_model/config.json
 /kapampangan_wav2vec2_model
 kapampangan_wav2vec2_model/training_args.bin
 kapampangan_wav2vec2_model/vocab.json
+<<<<<<< Updated upstream
 /kapampangan_mt_model
 Kapampangan-to-English M2M100 Training.ipynb
 /kapampangan_wav2vec2_model
 /kapampangan_mt_nllb
+=======
+>>>>>>> Stashed changes
+/kapampangan_mt_model

@@ -74,11 +74,12 @@ training_args = Seq2SeqTrainingArguments(
     predict_with_generate=True,
     save_total_limit=2,
     logging_dir="./logs",
-    evaluation_strategy="epoch",
-    logging_strategy="epoch",
-    save_strategy="epoch",
+    eval_steps=500,       # evaluate every 500 steps
+    logging_steps=500,    # log every 500 steps
+    save_steps=500,       # save every 500 steps
     fp16=torch.cuda.is_available(),
 )
+
 
 ## 7. Trainer Setup
 data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model)

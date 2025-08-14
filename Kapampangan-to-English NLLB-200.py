@@ -4,17 +4,17 @@ import pandas as pd
 from datasets import Dataset
 from transformers import (
     AutoTokenizer,
-    AutoModelForSeq2SeqLM
+    AutoModelForSeq2SeqLM,
+    DataCollatorForSeq2Seq,
+    Seq2SeqTrainer,
+    Seq2SeqTrainingArguments
 )
-from transformers.trainer_seq2seq import Seq2SeqTrainer
-from transformers.training_args_seq2seq import Seq2SeqTrainingArguments
-from transformers.data.data_collator import DataCollatorForSeq2Seq
 import torch
 import evaluate
 
 # === 1. Config ===
 CSV_PATH = "data/kapampangan_english.csv"
-MODEL_NAME = "facebook/nllb-200-distilled-600M"  # NLLB model
+MODEL_NAME = "facebook/nllb-200-distilled-600M"
 MODEL_DIR = "./kapampangan_mt_nllb"
 
 SPECIAL_SRC_TOKEN = "<kap>"   # Custom Kapampangan language marker
@@ -30,42 +30,35 @@ dataset = Dataset.from_pandas(df[["src_text", "tgt_text"]])
 dataset = dataset.train_test_split(test_size=0.2, seed=42)
 
 # === 4. Load Tokenizer & Model ===
-tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, src_lang="eng_Latn")  # temp placeholder
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)  # No src_lang yet
 model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_NAME)
 
 # Add <kap> as a special token
 tokenizer.add_special_tokens({'additional_special_tokens': [SPECIAL_SRC_TOKEN]})
 model.resize_token_embeddings(len(tokenizer))
 
+# Force English output
+model.config.forced_bos_token_id = tokenizer.lang_code_to_id[TGT_LANG]
+
 # === 5. Preprocess ===
 def preprocess(examples):
-    # Prepend <kap> tag to source text
+    # Prepend <kap> to source text
     src_texts = [f"{SPECIAL_SRC_TOKEN} {text}" for text in examples["src_text"]]
-    
-    # Tokenize source
+
+    # Tokenize with modern text_target API
     model_inputs = tokenizer(
         src_texts,
         truncation=True,
         padding="max_length",
-        max_length=128
+        max_length=128,
+        text_target=examples["tgt_text"]
     )
 
-    # Tokenize target (English)
-    with tokenizer.as_target_tokenizer():
-        labels = tokenizer(
-            examples["tgt_text"],
-            truncation=True,
-            padding="max_length",
-            max_length=128
-        )
-
-    # Replace pad token IDs in labels with -100
-    labels_input_ids = [
+    # Replace PAD token IDs in labels with -100
+    model_inputs["labels"] = [
         [(t if t != tokenizer.pad_token_id else -100) for t in label]
-        for label in labels["input_ids"]
+        for label in model_inputs["labels"]
     ]
-    model_inputs["labels"] = labels_input_ids
-
     return model_inputs
 
 tokenized_dataset = dataset.map(preprocess, batched=True)
@@ -100,30 +93,31 @@ trainer = Seq2SeqTrainer(
 # === 8. Train ===
 trainer.train()
 
-# === 9. Save ===
+# === 9. Save Model & Tokenizer ===
 trainer.save_model(MODEL_DIR)
 tokenizer.save_pretrained(MODEL_DIR)
 print(f"✅ Model saved to: {MODEL_DIR}")
 
-# === 10. Translation Function ===
-def kapampangan_translate(text):
+# === 10. Translation (Batched) ===
+def batch_translate(texts, batch_size=8):
+    results = []
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
-    src_text = f"{SPECIAL_SRC_TOKEN} {text}"
-    inputs = tokenizer(src_text, return_tensors="pt", padding=True, truncation=True, max_length=128).to(device)
-    with torch.no_grad():
-        outputs = model.generate(
-            **inputs,
-            forced_bos_token_id=tokenizer.convert_tokens_to_ids(TGT_LANG)  # Force English output
-        )
-    return tokenizer.decode(outputs[0], skip_special_tokens=True)
+    for i in range(0, len(texts), batch_size):
+        src_texts = [f"{SPECIAL_SRC_TOKEN} {t}" for t in texts[i:i+batch_size]]
+        inputs = tokenizer(src_texts, return_tensors="pt", padding=True, truncation=True, max_length=128).to(device)
+        with torch.no_grad():
+            outputs = model.generate(**inputs)
+        results.extend(tokenizer.batch_decode(outputs, skip_special_tokens=True))
+    return results
 
 # === 11. Evaluate BLEU ===
 print("\n--- Evaluating BLEU Score ---")
 bleu = evaluate.load("bleu")
 
-preds = [kapampangan_translate(x) for x in df["src_text"]]
-refs = [[x] for x in df["tgt_text"]]
+test_df = dataset["test"].to_pandas()
+preds = batch_translate(test_df["src_text"].tolist())
+refs = [[x] for x in test_df["tgt_text"].tolist()]
 
 bleu_score = bleu.compute(predictions=preds, references=refs)
 print(" BLEU Score:", bleu_score)
@@ -138,6 +132,6 @@ sample_texts = [
 ]
 
 for i, kap_text in enumerate(sample_texts):
-    translated = kapampangan_translate(kap_text)
+    translated = batch_translate([kap_text])[0]
     print(f"[{i+1}] Kapampangan: {kap_text}")
     print(f"    ➤ English: {translated}")

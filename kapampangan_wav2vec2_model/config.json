@@ -109,7 +109,7 @@
     1
   ],
   "torch_dtype": "float32",
-  "transformers_version": "4.53.1",
+  "transformers_version": "4.53.2",
   "use_weighted_layer_sum": false,
   "vocab_size": 28,
   "xvector_output_dim": 512

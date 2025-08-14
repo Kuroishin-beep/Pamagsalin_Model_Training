@@ -85,7 +85,7 @@
   "num_hidden_layers": 24,
   "num_negatives": 100,
   "output_hidden_size": 1024,
-  "pad_token_id": 27,
+  "pad_token_id": 25,
   "proj_codevector_dim": 768,
   "tdnn_dilation": [
     1,
@@ -111,6 +111,6 @@
   "torch_dtype": "float32",
   "transformers_version": "4.53.1",
   "use_weighted_layer_sum": false,
-  "vocab_size": 30,
+  "vocab_size": 28,
   "xvector_output_dim": 512
 }

@@ -1,0 +1,22 @@
+# Translation Configuration
+model: runs/kap-en_step_12000.pt  # Use your best checkpoint
+src: test_input.kap               # Input Kapampangan text file
+output: translation_output.eng    # Output English file
+
+# Translation settings
+beam_size: 5                      # Beam search size (higher = better quality, slower)
+max_length: 100                   # Maximum output length
+min_length: 1                     # Minimum output length
+length_penalty: 0.9               # Length penalty for beam search
+coverage_penalty: 0.0             # Coverage penalty
+n_best: 1                         # Return top N translations
+
+# Use same transforms as training
+transforms: [onmt_tokenize, sentencepiece]
+src_subword_model: ./sp/spm_shared.model
+tgt_subword_model: ./sp/spm_shared.model
+
+# Other options
+replace_unk: true                 # Replace unknown tokens
+verbose: true                     # Show progress
+gpu: 0                           # Use GPU if available (set to -1 for CPU)

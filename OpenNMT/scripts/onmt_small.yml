@@ -1,0 +1,27 @@
+## Data
+save_data: runs/data_index
+data:
+  corpus_1:
+    path_src: data/onmt/train.kap
+    path_tgt: data/onmt/train.eng
+  valid:
+    path_src: data/onmt/valid.kap
+    path_tgt: data/onmt/valid.eng
+
+## Transforms
+transforms: [filtertoolong, onmt_tokenize, sentencepiece]
+
+## Filter Too Long
+filtertoolong:
+  src_seq_length: 256
+  tgt_seq_length: 256
+
+## Onmt Tokenizer
+onmt_tokenize:
+  mode: space
+
+## SentencePiece
+sentencepiece:
+  src_subword_model: data/sp/spm_shared.model
+  tgt_subword_model: data/sp/spm_shared.model
+  share_vocab: true

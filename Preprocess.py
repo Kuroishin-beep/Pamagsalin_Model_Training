@@ -6,7 +6,7 @@ import json
 # Config
 INPUT_DIR = "data/Audio_Files"
 OUTPUT_DIR = "data/Cleaned_Audio_Files"
-INPUT_METADATA = "data/kapampangan_audio.csv"  # Original CSV file
+INPUT_METADATA = "data/kapampangan_audio_tads.csv"  # Original CSV file
 OUTPUT_METADATA_CSV = os.path.join(OUTPUT_DIR, "metadata.csv")
 OUTPUT_METADATA_JSON = os.path.join(OUTPUT_DIR, "metadata.json")
 

@@ -1,6 +1,6 @@
 {
   "added_tokens_decoder": {
-    "24": {
+    "29": {
       "content": "[UNK]",
       "lstrip": true,
       "normalized": false,
@@ -8,7 +8,7 @@
       "single_word": false,
       "special": false
     },
-    "25": {
+    "30": {
       "content": "[PAD]",
       "lstrip": true,
       "normalized": false,
@@ -16,7 +16,7 @@
       "single_word": false,
       "special": false
     },
-    "26": {
+    "31": {
       "content": "<s>",
       "lstrip": false,
       "normalized": false,
@@ -24,7 +24,7 @@
       "single_word": false,
       "special": true
     },
-    "27": {
+    "32": {
       "content": "</s>",
       "lstrip": false,
       "normalized": false,

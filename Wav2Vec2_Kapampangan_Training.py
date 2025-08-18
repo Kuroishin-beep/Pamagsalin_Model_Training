@@ -321,3 +321,49 @@ for i in sample(range(len(decoded_preds)), 5):
     print(f"Kapampangan (Predicted) : {decoded_preds[i]}")
     print(f"Kapampangan (Reference) : {decoded_labels[i]}")
     print("-" * 40)
+
+print("\n--- Step 8: PyTorch Dynamic Quantization (INT8) ---")
+from copy import deepcopy
+
+# Load fresh FP32 best model from disk to avoid quantizing a model in training mode
+fp32_model = Wav2Vec2ForCTC.from_pretrained(MODEL_OUTPUT_DIR)
+fp32_model.eval()
+
+# Quantize only Linear layers (safe for Transformer blocks and CTC head)
+quantized_torch_model = torch.quantization.quantize_dynamic(
+    fp32_model, {torch.nn.Linear}, dtype=torch.qint8
+)
+quant_dir = MODEL_OUTPUT_DIR + "_int8_torch"
+quantized_torch_model.save_pretrained(quant_dir)
+
+# Reuse your existing processor
+processor.save_pretrained(quant_dir)
+
+print(f"✅ PyTorch INT8 quantized model saved to: {quant_dir}")
+
+# (Optional) Quick WER check after PT-INT8 quantization (CPU)
+from datasets import Dataset as HFDataset
+
+def compute_wer_torch_quant(eval_ds):
+    quantized_torch_model.eval()
+    quantized_torch_model.to("cpu")
+    preds = []
+    refs = []
+    with torch.no_grad():
+        for ex in eval_ds:
+            iv = torch.tensor(ex["input_values"]).unsqueeze(0)  # [1, T]
+            logits = quantized_torch_model(iv).logits
+            pred_ids = torch.argmax(logits, dim=-1)
+            pred_str = processor.batch_decode(pred_ids)[0]
+            lab_str = processor.batch_decode(torch.tensor(ex["labels"]).unsqueeze(0), group_tokens=False)[0]
+            preds.append(pred_str)
+            refs.append(lab_str)
+    wer_metric = evaluate.load("wer")
+    return wer_metric.compute(predictions=preds, references=refs)
+
+try:
+    small_eval = processed_eval_dataset.select(range(min(50, len(processed_eval_dataset))))
+    wer_int8_pt = compute_wer_torch_quant(small_eval)
+    print(f"PyTorch INT8 (dynamic) quick WER on {len(small_eval)} samples: {wer_int8_pt:.4f}")
+except Exception as e:
+    print("Skipping quick WER check for PT INT8 due to:", repr(e))

@@ -1,1 +1,0 @@
-python -m onmt.bin.train -config scripts/config_train.yaml

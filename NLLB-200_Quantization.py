@@ -1,24 +1,21 @@
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
-import torch
+from transformers import AutoTokenizer
+from optimum.onnxruntime import ORTModelForSeq2SeqLM
+import os
 
-MODEL_DIR = "./kapampangan_mt_nllb"
+MODEL_DIR = "./kapampangan_mt_nllb/checkpoint-3480"
+ONNX_DIR = "./onnx_model"
 
-# Load trained model in 8-bit precision
-model = AutoModelForSeq2SeqLM.from_pretrained(
+os.makedirs(ONNX_DIR, exist_ok=True)
+
+# Export and save ONNX model
+model = ORTModelForSeq2SeqLM.from_pretrained(
     MODEL_DIR,
-    load_in_8bit=True,                # or load_in_4bit=True
-    device_map="auto"
+    export=True,            # forces ONNX export
+    use_cache=False         # safer for export
 )
 tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR)
 
-# Test translation after quantization
-def batch_translate_quant(texts, batch_size=8):
-    results = []
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    for i in range(0, len(texts), batch_size):
-        src_texts = [f"<kap> {t}" for t in texts[i:i+batch_size]]
-        inputs = tokenizer(src_texts, return_tensors="pt", padding=True, truncation=True, max_length=128).to(device)
-        with torch.no_grad():
-            outputs = model.generate(**inputs)
-        results.extend(tokenizer.batch_decode(outputs, skip_special_tokens=True))
-    return results
+model.save_pretrained(ONNX_DIR)
+tokenizer.save_pretrained(ONNX_DIR)
+
+print("✅ Export complete. ONNX model saved at:", ONNX_DIR)

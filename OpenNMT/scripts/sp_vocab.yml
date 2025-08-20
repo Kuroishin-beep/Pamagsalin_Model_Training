@@ -1,9 +1,0 @@
-# sp_vocab.yml
-src_subword_model: data/sp/spm_shared.model
-tgt_subword_model: data/sp/spm_shared.model
-src_subword_nbest: 1
-tgt_subword_nbest: 1
-src_subword_alpha: 0.0
-tgt_subword_alpha: 0.0
-src_onmttok_kwargs: "{'lower': True}"
-tgt_onmttok_kwargs: "{'lower': True}"

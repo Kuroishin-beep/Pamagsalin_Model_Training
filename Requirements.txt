@@ -1,14 +1,38 @@
+# Core ML Libraries with NumPy 1.x compatibility
+numpy>=1.21.0,<2.0
+scipy>=1.7.0,<1.12.0
+
+# PyTorch ecosystem
 torch>=2.0.0
 torchaudio>=2.0.0
 torchvision>=0.15.0
-transformers>=4.30.0
+torchcodec>=0.1.0
+
+# Transformers and related
+transformers>=4.30.0,<4.36.0
 datasets>=2.12.0
-librosa>=0.10.0
-soundfile>=0.12.0
 accelerate>=0.20.0
 evaluate>=0.4.0
-jiwer>=3.0.0
-tf-keras>=2.15.0
-torchcodec>=0.1.0
+
+# Audio processing
+librosa>=0.10.0
+soundfile>=0.12.0
+
+# Text processing
 sentencepiece>=0.1.99
 sacremoses>=0.0.53
+jiwer>=3.0.0
+
+# TensorFlow (with compatible version)
+tf-keras>=2.15.0,<2.16.0
+tensorflow>=2.15.0,<2.16.0
+
+# ONNX export (add this for your export script)
+optimum[onnxruntime]>=1.14.0
+onnx>=1.14.0
+onnxruntime>=1.16.0
+
+# Additional useful packages
+tqdm>=4.65.0
+matplotlib>=3.7.0
+seaborn>=0.12.0

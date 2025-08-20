@@ -203,11 +203,6 @@ if __name__ == "__main__":
         
         if not success:
             logger.error("❌ All export attempts failed")
-            logger.info("💡 Suggestions:")
-            logger.info("1. Try running as administrator")
-            logger.info("2. Check if antivirus is blocking temp file access")
-            logger.info("3. Manually clean Windows temp directory")
-            logger.info("4. Use a different output directory (e.g., ./exported_model)")
             sys.exit(1)
         else:
             logger.info("✅ Export succeeded on second attempt!")

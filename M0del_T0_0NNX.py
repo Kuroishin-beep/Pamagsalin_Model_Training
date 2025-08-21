@@ -15,10 +15,10 @@ tokenizer.save_pretrained(save_dir)
 # Export model to ONNX
 main_export(
     model_name_or_path=model_id,
-    output=save_dir,
     task="seq2seq-lm",
     framework="pt",        # PyTorch backend
     opset=14               # good balance of support
 )
 
 print("✅ Export finished. ONNX models saved in:", save_dir)
+z

@@ -6,9 +6,10 @@ import json
 # Config
 INPUT_DIR = "data/Audio_Files"
 OUTPUT_DIR = "data/Cleaned_Audio_Files"
-INPUT_METADATA = "data/kapampangan_audio_tads.csv"  # Original CSV file
+INPUT_METADATA = "data/kapampangan_audio.csv"  # Original CSV file
 OUTPUT_METADATA_CSV = os.path.join(OUTPUT_DIR, "metadata.csv")
-OUTPUT_METADATA_JSON = os.path.join(OUTPUT_DIR, "metadata.json")
+OUTPUT_METADATA_JSON = os.path.join(OUTPUT_DIR, "metadata.json")  # Add this near your other OUTPUT_METADATA_CSV
+
 
 TARGET_SAMPLE_RATE = 16000
 TARGET_CHANNELS = 1  # mono
@@ -16,6 +17,8 @@ TARGET_CHANNELS = 1  # mono
 def process_audio(input_path, output_path):
     """Converts audio to WAV, mono, 16kHz without changing filename."""
     try:
+        input_path = os.path.abspath(input_path).replace("\\", "/")
+        output_path = os.path.abspath(output_path).replace("\\", "/")
         command = [
             "ffmpeg", "-y",
             "-i", input_path,
@@ -27,6 +30,7 @@ def process_audio(input_path, output_path):
         print(f"✅ Processed: {input_path} → {output_path}")
     except Exception as e:
         print(f"❌ Failed to process {input_path}: {e}")
+
 
 def scan_and_clean(metadata_map):
     """Scans INPUT_DIR, processes audio, and collects metadata for cleaned files."""
